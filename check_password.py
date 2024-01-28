@@ -5,7 +5,17 @@ import gc
 import os
 import tqdm
 import ctypes
+import sys
+import signal
 
+
+# Global flag to indicate interrupt
+interrupted = False
+
+@ctypes.CFUNCTYPE(ctypes.c_bool)
+def is_interrupted():
+    global interupted
+    return ctypes.c_bool(interrupted)
 
 # Function to input password and return SHA-1 hash
 def hash_password(prompt):
@@ -46,10 +56,19 @@ def check_database(hash_to_check, db_path):
     return None
 
 
+def interrupt_handler(*args,**kwargs):
+    print(f"In interrupt handler, args={args}, kwargs={kwargs}")
+    sys.exit(1)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Hash a password using SHA-1, and check a database")
     parser.add_argument("--db", help="Database file", required=True, type=str)
     args = parser.parse_args()
+
+    # Register the interrupt handler
+    signal.signal(signal.SIGINT, interrupt_handler)
+    signal.signal(signal.SIGTERM, interrupt_handler)
 
     if not os.path.exists(args.db):
         raise FileNotFoundError(f"Database file {args.db} does not exist")
@@ -74,6 +93,9 @@ if __name__ == "__main__":
     # Callback function for updating the progress bar
     @ctypes.CFUNCTYPE(None, ctypes.c_long)
     def update_progress(bytes_read):
+        global interrupted
+        if interrupted:
+            sys.exit(1)
         progress_bar.update(bytes_read - progress_bar.n)
 
     # Load the C++ shared library
@@ -85,10 +107,17 @@ if __name__ == "__main__":
     # Format the hash
     the_hash = format_hash(hash1).encode()
     db_path = args.db.encode()
-    num = search_lib.search_hash_with_progress(db_path, the_hash, update_progress)
-    num = int(num)
+    try:
+        num = search_lib.search_hash_with_progress(db_path, the_hash, update_progress, is_interrupted)
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\nInterrupted by user")
+        sys.exit(1)
+    finally:
+        progress_bar.close()
 
-    progress_bar.close()
+    # Turn num into a python integer.
+    num = int(num)
 
     if num >= 0:
         print(f"Password found in database, {num} occurances.")
