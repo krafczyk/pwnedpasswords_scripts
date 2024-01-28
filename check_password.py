@@ -85,36 +85,16 @@ if __name__ == "__main__":
 
     print(f"Password SHA-1 Hash: {hash1}")
 
-   
-    # Initialize the progress bar
-    total_size = os.path.getsize(args.db)
-    progress_bar = tqdm.tqdm(total=total_size, unit='B', unit_scale=True, desc="Checking database", leave=False)
-
-    # Callback function for updating the progress bar
-    @ctypes.CFUNCTYPE(None, ctypes.c_long)
-    def update_progress(bytes_read):
-        global interrupted
-        if interrupted:
-            sys.exit(1)
-        progress_bar.update(bytes_read - progress_bar.n)
-
     # Load the C++ shared library
-    search_lib = ctypes.CDLL("./search_hash_with_progress.so")
-    search_lib.search_hash_with_progress.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.CFUNCTYPE(None, ctypes.c_long)]
-    search_lib.search_hash_with_progress.restype = ctypes.c_int
+    search_lib = ctypes.CDLL("./search_hash.so")
+    search_lib.search_hash.argtypes = [ctypes.c_char_p, ctypes.c_char_p]
+    search_lib.search_hash.restype = ctypes.c_int
 
     # Call the C++ function with the callback for progress update
     # Format the hash
     the_hash = format_hash(hash1).encode()
     db_path = args.db.encode()
-    try:
-        num = search_lib.search_hash_with_progress(db_path, the_hash, update_progress, is_interrupted)
-    except KeyboardInterrupt:
-        interrupted = True
-        print("\nInterrupted by user")
-        sys.exit(1)
-    finally:
-        progress_bar.close()
+    num = search_lib.search_hash(db_path, the_hash)
 
     # Turn num into a python integer.
     num = int(num)
@@ -122,4 +102,4 @@ if __name__ == "__main__":
     if num >= 0:
         print(f"Password found in database, {num} occurances.")
     else:
-        print("Password not found in database ({num})")
+        print(f"Password not found in database ({num})")
