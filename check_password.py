@@ -4,6 +4,7 @@ import hashlib
 import gc
 import os
 import tqdm
+import ctypes
 
 
 # Function to input password and return SHA-1 hash
@@ -65,10 +66,31 @@ if __name__ == "__main__":
 
     print(f"Password SHA-1 Hash: {hash1}")
 
-    the_hash = format_hash(hash1)
-    
-    num = check_database(the_hash, args.db)
-    if num is not None:
+   
+    # Initialize the progress bar
+    total_size = os.path.getsize(args.db)
+    progress_bar = tqdm.tqdm(total=total_size, unit='B', unit_scale=True, desc="Checking database", leave=False)
+
+    # Callback function for updating the progress bar
+    @ctypes.CFUNCTYPE(None, ctypes.c_long)
+    def update_progress(bytes_read):
+        progress_bar.update(bytes_read - progress_bar.n)
+
+    # Load the C++ shared library
+    search_lib = ctypes.CDLL("./search_hash_with_progress.so")
+    search_lib.search_hash_with_progress.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.CFUNCTYPE(None, ctypes.c_long)]
+    search_lib.search_hash_with_progress.restype = ctypes.c_int
+
+    # Call the C++ function with the callback for progress update
+    # Format the hash
+    the_hash = format_hash(hash1).encode()
+    db_path = args.db.encode()
+    num = search_lib.search_hash_with_progress(db_path, the_hash, update_progress)
+    num = int(num)
+
+    progress_bar.close()
+
+    if num >= 0:
         print(f"Password found in database, {num} occurances.")
     else:
-        print("Password not found in database")
+        print("Password not found in database ({num})")
